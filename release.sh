@@ -659,6 +659,13 @@ external_tag=
 
 checkout_queued_external() {
 	if [ -n "$external_dir" -a -n "$external_uri" ]; then
+		if [ -n "$nolib" ] && { echo "$external_uri" | grep "wowace.com" >/dev/null; }; then
+			echo "Ignoring library $external_uri"
+			external_dir=
+			external_uri=
+			external_tag=
+			return
+		fi
 		$mkdir -p "$pkgdir/$external_dir"
 		echo "Getting checkout for $external_uri"
 		case $external_uri in
@@ -692,8 +699,8 @@ checkout_queued_external() {
 	external_tag=
 }
 
-# Second scan of .pkgmeta to perform pre-move-folders actions.
-if [ -f "$topdir/.pkgmeta" ]; then
+# Second scan of .pkgmeta to check out externals.
+if [ -f "$topdir/.pkgmeta" -a -z "$skip_externals" ]; then
 	while IFS='' read -r yaml_line; do
 		case $yaml_line in
 		[!\ ]*:*)
@@ -714,28 +721,26 @@ if [ -f "$topdir/.pkgmeta" ]; then
 				yaml_keyvalue "$yaml_line"
 				case $pkgmeta_phase in
 				externals)
-					if [ -z "$skip_externals" -a -z "$nolib" ]; then
-						case $yaml_key in
-						url)
-							# Queue external URI for checkout.
+					case $yaml_key in
+					url)
+						# Queue external URI for checkout.
+						external_uri=$yaml_value
+						;;
+					tag)
+						# Queue external tag for checkout.
+						external_tag=$yaml_value
+						;;
+					*)
+						# Started a new external, so checkout any queued externals.
+						checkout_queued_external
+						external_dir=$yaml_key
+						if [ -n "$yaml_value" ]; then
 							external_uri=$yaml_value
-							;;
-						tag)
-							# Queue external tag for checkout.
-							external_tag=$yaml_value
-							;;
-						*)
-							# Started a new external, so checkout any queued externals.
+							# Immediately checkout this fully-specified external.
 							checkout_queued_external
-							external_dir=$yaml_key
-							if [ -n "$yaml_value" ]; then
-								external_uri=$yaml_value
-								# Immediately checkout this fully-specified external.
-								checkout_queued_external
-							fi
-							;;
-						esac
-					fi
+						fi
+						;;
+					esac
 					;;
 				esac
 				;;
