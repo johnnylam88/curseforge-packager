@@ -72,45 +72,7 @@ skip_externals=
 skip_localization=
 skip_zipfile=
 
-# Set $topdir to top-level directory of the checkout.
-if [ -z "$topdir" ]; then
-	dir=$( $pwd )
-	if [ -d "$dir/.git" -o -d "$dir/.svn" ]; then
-		topdir=.
-	else
-		dir=${dir%/*}
-		topdir=..
-		while [ -n "$dir" ]; do
-			if [ -d "$topdir/.git" -o -d "$topdir/.svn" ]; then
-				break
-			fi
-			dir=${dir%/*}
-			topdir="$topdir/.."
-		done
-		if [ ! -d "$topdir/.git" -o -d "$topdir/.svn" ]; then
-			echo "No Git or SVN checkout found." >&2
-			exit 10
-		fi
-	fi
-fi
-
-# Set $releasedir to the directory which will contain the generated addon zipfile.
-: ${releasedir:="$topdir/release"}
-
-# Set $basedir to the basename of the checkout directory.
-basedir=$( cd "$topdir" && $pwd )
-case $basedir in
-/*/*)
-	basedir=${basedir##/*/}
-	;;
-/*)
-	basedir=${basedir##/}
-	;;
-esac
-
-# The default slug is the lowercase basename of the checkout directory.
-slug_default=$( echo "$basedir" | $tr '[A-Z]' '[a-z]' )
-
+# Process command-line options
 usage() {
 	echo "Usage: release.sh [-celouz] [-n name] [-p slug] [-r releasedir] [-t topdir]" >&2
 	echo "  -c               Skip copying files into the package directory." >&2
@@ -118,15 +80,14 @@ usage() {
 	echo "  -l               Skip @localization@ keyword replacement." >&2
 	echo "  -n name          Set the name of the addon." >&2
 	echo "  -o               Keep existing package directory; just overwrite contents." >&2
-	echo "  -p slug          Set the project slug used on WowAce or CurseForge. Defaults to \`\`$slug_default''." >&2
+	echo "  -p slug          Set the project slug used on WowAce or CurseForge." >&2
 	echo "  -r releasedir    Set directory containing the package directory. Defaults to \`\`\$topdir/release''." >&2
 	echo "  -s               Create a stripped-down \`\`nolib'' package." >&2
-	echo "  -t topdir        Set top-level directory of checkout.  Defaults to \`\`$topdir''." >&2
+	echo "  -t topdir        Set top-level directory of checkout." >&2
 	echo "  -u               Use Unix line-endings." >&2
 	echo "  -z               Skip zipfile creation." >&2
 }
 
-# Process command-line options
 OPTIND=1
 while $getopts ":celn:op:r:st:uz" opt; do
 	case $opt in
@@ -178,13 +139,54 @@ while $getopts ":celn:op:r:st:uz" opt; do
 		exit 1
 		;;
 	\?)
-		echo "Unknown option \`\`-$OPTARG''." >&2
+		if [ "$OPTARG" != "?" ]; then
+			echo "Unknown option \`\`-$OPTARG''." >&2
+		fi
 		usage
 		exit 2
 		;;
 	esac
 done
 shift $((OPTIND - 1))
+
+# Set $topdir to top-level directory of the checkout.
+if [ -z "$topdir" ]; then
+	dir=$( $pwd )
+	if [ -d "$dir/.git" -o -d "$dir/.svn" ]; then
+		topdir=.
+	else
+		dir=${dir%/*}
+		topdir=..
+		while [ -n "$dir" ]; do
+			if [ -d "$topdir/.git" -o -d "$topdir/.svn" ]; then
+				break
+			fi
+			dir=${dir%/*}
+			topdir="$topdir/.."
+		done
+		if [ ! -d "$topdir/.git" -a ! -d "$topdir/.svn" ]; then
+			echo "No Git or SVN checkout found." >&2
+			exit 10
+		fi
+	fi
+fi
+
+# Set $releasedir to the directory which will contain the generated addon zipfile.
+: ${releasedir:="$topdir/release"}
+
+# Set $basedir to the basename of the checkout directory.
+basedir=$( cd "$topdir" && $pwd )
+case $basedir in
+/*/*)
+	basedir=${basedir##/*/}
+	;;
+/*)
+	basedir=${basedir##/}
+	;;
+esac
+
+# The default slug is the lowercase basename of the checkout directory.
+slug_default=$( echo "$basedir" | $tr '[A-Z]' '[a-z]' )
 
 # Set $repository_type to "git" or "svn".
 repository_type=
@@ -1220,12 +1222,12 @@ EOF
 		case $repository_type in
 		git)
 			# The Git changelog is Markdown-friendly.
-			$git log $git_commit_range --pretty=format:"###   %B" |
+			$git --git-dir $topdir/.git log $git_commit_range --pretty=format:"###   %B" |
 				$sed -e "s/^/    /g" -e "s/^ *$//g" -e "s/^    ###/-/g"
 			;;
 		svn)
 			# The SVN changelog is plain text.
-			$svn log -v $svn_revision_range
+			$svn log $topdir -v $svn_revision_range
 			;;
 		esac
 	) | line_ending_filter > "$pkgdir/$changelog"
